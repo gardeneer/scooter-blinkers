@@ -1,8 +1,9 @@
-/**
+//**
  * Folding blinker por scooter
+ *
  * @author: Felipe Martínez Rodríguez
  * @author: Ignacio Colino Cortizo <icolinocortizo@gmail.com>
- * @version 0.1.1
+ * @version 0.1.2
  */
 
 #include <Adafruit_NeoPixel.h>
@@ -10,19 +11,19 @@
 #include <avr/power.h> // Required for 16 MHz Adafruit Trinket
 #include <Servo.h>
 #endif
-#define INT_D       2 // Output for right blinker
-#define INT_I       9 // Output for left blinker
+#define INT_R       2 // Output for right blinker
+#define INT_L       9 // Output for left blinker
 #define NUMPIXELS 16  // Number of pixels in LED panel
-Adafruit_NeoPixel pixelsDerecho(NUMPIXELS, INT_D, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel pixelsIzquierdo(NUMPIXELS, INT_I, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel rightPixels(NUMPIXELS, INT_R, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel leftPixels(NUMPIXELS, INT_L, NEO_GRB + NEO_KHZ800);
 
-#define TIME 50 // Blinker speed
-#define TIME2 1 // Open speed
+#define BLINKER_TIME 50 // Blinker speed
+#define OPEN_SPEED 1 // Open speed
 
 int INTD = 5;   // Input for right blinker activation
 int INTI = 8;   // Input for left blinker activation
-Servo INTDSERV;
-Servo INTISERV;
+Servo INTRIGHTSERV;
+Servo INTLEFTSERV;
 
 struct color_t { // RGB Color structure
   int red;
@@ -31,13 +32,13 @@ struct color_t { // RGB Color structure
 };
 
 // Color definition. All of them are orange with different intensity.
-struct color_t LUZ_NARANJA_H = {200, 100, 0};
-struct color_t LUZ_NARANJA_M = {100, 50, 0};
-struct color_t LUZ_NARANJA_L = {10, 5, 0};
-struct color_t LUZ_OFF = {0, 0, 0};
+struct color_t LIGHT_ORANGE_H = {200, 100, 0};
+struct color_t LIGHT_ORANGE_M = {100, 50, 0};
+struct color_t LIGHT_ORANGE_L = {10, 5, 0};
+struct color_t LIGHT_OFF = {0, 0, 0};
 
 // Colors structure
-struct color_t colores[4]; // Intensity of used colors
+struct color_t colors[4]; // Intensity of used colors
 
 // Light program
 int CUATRICOLOR0[2][8] =
@@ -137,18 +138,20 @@ int CUATRICOLOR18[2][8] =
 };
 
 // How many times the sequence is repeated
-int numeroRepeticiones = 6;
+int numberOfRepetitions = 6;
 // Number of elements of a sequence (from 0 to 18)
-int elementosSecuencia = 19;
+int elementsInSequence = 19;
 
-bool estadoIntermitenteDerecho;
-bool estadoIntermitenteIzquierdo;
+// Blinkers state
+bool rightBlinkerState;
+bool leftBlinkerState;
 
-int frameIntermitenteDerecho;
-int frameIntermitenteIzquierdo;
+// Blinkers frame
+int rightBlinkerFrame;
+int leftBlinkerFrame;
 
-int bucleDerecho;
-int bucleIzquierdo;
+int rightLoop;
+int leftLoop;
 
 void setup()
 {
@@ -158,46 +161,53 @@ void setup()
 		clock_prescale_set(clock_div_1);
 	}
 #endif
-	pixelsDerecho.begin();
-	pixelsIzquierdo.begin();
+	rightPixels.begin();
+	leftPixels.begin();
 	pinMode (INTD, INPUT);  // Define input for right blinker
 	pinMode (INTI, INPUT); // Define input for left blinker
-	INTDSERV.attach(3);  // link right servo with digital pin 3
-	INTISERV.attach(10);  // link left servo with digital pin 10
+	INTRIGHTSERV.attach(3);  // link right servo with digital pin 3
+	INTLEFTSERV.attach(10);  // link left servo with digital pin 10
 
 	// Initialization of blinker state to FALSE
-	estadoIntermitenteDerecho = false;
-	estadoIntermitenteIzquierdo = false;
+	rightBlinkerState = false;
+	leftBlinkerState = false;
 	
 	// Frame de representacion
-	frameIntermitenteDerecho = 0;
-	frameIntermitenteIzquierdo = 0;
+	rightBlinkerFrame = 0;
+	leftBlinkerFrame = 0;
 	
 	// Loop
-	bucleDerecho = 0;
-	bucleIzquierdo = 0;
+	rightLoop = 0;
+	leftLoop = 0;
 	
 	// Color assignment
-	colores[0] = LUZ_OFF;
-	colores[1] = LUZ_NARANJA_L;
-	colores[2] = LUZ_NARANJA_M;
-	colores[3] = LUZ_NARANJA_H ;
+	colors[0] = LIGHT_OFF;
+	colors[1] = LIGHT_ORANGE_L;
+	colors[2] = LIGHT_ORANGE_M;
+	colors[3] = LIGHT_ORANGE_H ;
 	
 	// Set servo to initial position
-	INTDSERV.write (5);
-	INTISERV.write (123);
+	INTRIGHTSERV.write (5);
+	INTLEFTSERV.write (123);
 }
 
-void setMultiPanel(int panel[2][8], color_t colores[], Adafruit_NeoPixel &pixelsAux)      //Creamos un array que controla los cuadros de luces
+/**
+ * Create an array to control LED panel
+ *
+ * panel: image to display
+ * colors: colors to use in display
+ * pixelsAux: LED panel
+ */
+void setMultiPanel(int panel[2][8], color_t colors[], Adafruit_NeoPixel &pixelsAux)
 {
-	int numFilas = 2;
-	int numColumnas = 8;
-	for (int fila = 0; fila < numFilas; fila++)
+	int rowNumber = 2;
+	int columnNumber = 8;
+	for (int row = 0; row < rowNumber; row++)
 	{
-		for (int columna = 0; columna < numColumnas; columna++)
+		for (int column = 0; column < columnNumber; column++)
 		{
-			int value = panel[fila][columna];
-			pixelsAux.setPixelColor(((numColumnas * fila) + columna), pixelsAux.Color(colores[value].red, colores[value].green, colores[value].blue));
+			int value = panel[row][column];
+			pixelsAux.setPixelColor(((columnNumber * row) + column), pixelsAux.Color(colors[value].red, colors[value].green, colors[value].blue));
 		}
 	}
 	pixelsAux.show();
@@ -209,101 +219,102 @@ void loop()
 	{
 		if (digitalRead (INTI) == HIGH)
 		{
-			// Ambos intermitentes. Parada de emergencia.
-			if (estadoIntermitenteDerecho)
+			// Both blinkers. Emergency stop.
+			if (rightBlinkerState)
 			{
-				if (estadoIntermitenteIzquierdo)
+				if (leftBlinkerState)
 				{
-					// Ya activa.
-					if (frameIntermitenteDerecho == elementosSecuencia)
+					// Already active.
+					if (rightBlinkerFrame == elementsInSequence)
 					{
-						// Reiniciamos secuencia
-						frameIntermitenteDerecho = 0;
+						// Restart sequence
+						rightBlinkerFrame = 0;
 					}
-					if (frameIntermitenteIzquierdo == elementosSecuencia)
+					if (leftBlinkerFrame == elementsInSequence)
 					{
-						frameIntermitenteIzquierdo = 0;
+						// Restart sequence
+						leftBlinkerFrame = 0;
 					}
 				}
 				else
 				{
-					// Sólo estaba activo intermitente derecho
-					frameIntermitenteDerecho = 0;
-					frameIntermitenteIzquierdo = 0;
-					estadoIntermitenteIzquierdo = true;
-					bucleDerecho = 0;
-					INTISERV.write(30);
+					// Only active right blinker
+					rightBlinkerFrame = 0;
+					leftBlinkerFrame = 0;
+					leftBlinkerState = true;
+					rightLoop = 0;
+					INTLEFTSERV.write(30);
 					delay(250);
 				}
 			}
 			else
 			{
-				estadoIntermitenteDerecho = true;
-				if (estadoIntermitenteIzquierdo)
+				rightBlinkerState = true;
+				if (leftBlinkerState)
 				{
-					// Sólo estaba activo intermitente izquierdo
-					frameIntermitenteDerecho = 0;
-					frameIntermitenteIzquierdo = 0;
-					bucleIzquierdo = 0;
-					INTDSERV.write(90);
+					// Only active left blinker
+					rightBlinkerFrame = 0;
+					leftBlinkerFrame = 0;
+					leftLoop = 0;
+					INTRIGHTSERV.write(90);
 				}
 				else
 				{
-					// No estaba activo ninguno
-					frameIntermitenteDerecho = 0;
-					frameIntermitenteIzquierdo = 0;
-					estadoIntermitenteIzquierdo = true;
-					INTDSERV.write(90);
-					INTISERV.write(30);
+					// No blinkers active
+					rightBlinkerFrame = 0;
+					leftBlinkerFrame = 0;
+					leftBlinkerState = true;
+					INTRIGHTSERV.write(90);
+					INTLEFTSERV.write(30);
 				}
 				delay(250);
 			}
 		}
 		else
 		{
-			// Sólo se ha pulsado el intermitente derecho
-			if (estadoIntermitenteDerecho)
+			// Only right blinker pressed
+			if (rightBlinkerState)
 			{
-				if (estadoIntermitenteIzquierdo)
+				if (leftBlinkerState)
 				{
-					// Estábamos en parada de emergencia. Se deshabilita
-					estadoIntermitenteDerecho = 0;
-					estadoIntermitenteIzquierdo = 0;
-					frameIntermitenteDerecho = 0;
-					frameIntermitenteIzquierdo = 0;
-					bucleDerecho = 0;
-					bucleIzquierdo = 0;
-					INTDSERV.write(5);
-					INTISERV.write(123);
-					setMultiPanel(CUATRICOLOR0, colores, pixelsDerecho);
-					setMultiPanel(CUATRICOLOR0, colores, pixelsIzquierdo);
+					// Emergency stop was actived. It is disabled.
+					rightBlinkerState = 0;
+					leftBlinkerState = 0;
+					rightBlinkerFrame = 0;
+					leftBlinkerFrame = 0;
+					rightLoop = 0;
+					leftLoop = 0;
+					INTRIGHTSERV.write(5);
+					INTLEFTSERV.write(123);
+					setMultiPanel(CUATRICOLOR0, colors, rightPixels);
+					setMultiPanel(CUATRICOLOR0, colors, leftPixels);
 					delay(250);
 				}
 				else
 				{
-					// Estabamos en secuencia de derecho
-					if (frameIntermitenteDerecho == elementosSecuencia)
+					// Right sequence active
+					if (rightBlinkerFrame == elementsInSequence)
 					{
-						bucleDerecho++;
-						frameIntermitenteDerecho = 0;
+						rightLoop++;
+						rightBlinkerFrame = 0;
 					}
 				}
 			}
 			else
 			{
-				// Queremos activar intermitentes derecho
-				INTDSERV.write(90);
-				estadoIntermitenteDerecho = true;
-				bucleDerecho = 0;
-				frameIntermitenteDerecho = 0;
-				if (estadoIntermitenteIzquierdo)
+				// Right blinker is set to active
+				INTRIGHTSERV.write(90);
+				rightBlinkerState = true;
+				rightLoop = 0;
+				rightBlinkerFrame = 0;
+				if (leftBlinkerState)
 				{
-					// Estabamos en secuencia de izquierdo. Cambiamos a derecho
-					INTISERV.write(123);
-					estadoIntermitenteIzquierdo = false;
-					frameIntermitenteIzquierdo = 0;
-					bucleIzquierdo = 0;
-					setMultiPanel(CUATRICOLOR0, colores, pixelsIzquierdo);
+					// Left sequence was active. Change sequence to right.
+					INTLEFTSERV.write(123);
+					leftBlinkerState = false;
+					leftBlinkerFrame = 0;
+					leftLoop = 0;
+					setMultiPanel(CUATRICOLOR0, colors, leftPixels);
 				}
 				delay(250);
 			}
@@ -313,83 +324,83 @@ void loop()
 	{
 		if (digitalRead(INTI) == HIGH)
 		{
-			// Queremos poner el intermitente izquierdo
-			if (estadoIntermitenteIzquierdo)
+			// Left blinker is set to active
+			if (leftBlinkerState)
 			{
-				if (estadoIntermitenteDerecho)
+				if (rightBlinkerState)
 				{
-					// Estábamos en parada de emergencia. Se deshabilita
-					estadoIntermitenteDerecho = 0;
-					estadoIntermitenteIzquierdo = 0;
-					frameIntermitenteDerecho = 0;
-					frameIntermitenteIzquierdo = 0;
-					bucleDerecho = 0;
-					bucleIzquierdo = 0;
-					INTDSERV.write(5);
-					INTISERV.write(123);
-					setMultiPanel(CUATRICOLOR0, colores, pixelsDerecho);
-					setMultiPanel(CUATRICOLOR0, colores, pixelsIzquierdo);
+					// Emergency stop active. It is disabled.
+					rightBlinkerState = 0;
+					leftBlinkerState = 0;
+					rightBlinkerFrame = 0;
+					leftBlinkerFrame = 0;
+					rightLoop = 0;
+					leftLoop = 0;
+					INTRIGHTSERV.write(5);
+					INTLEFTSERV.write(123);
+					setMultiPanel(CUATRICOLOR0, colors, rightPixels);
+					setMultiPanel(CUATRICOLOR0, colors, leftPixels);
 					delay(250);
 				}
 				else
 				{
-					// Ya estábamos en secuencia de izquierdo
-					if (frameIntermitenteIzquierdo == elementosSecuencia)
+					// Left sequence already active
+					if (leftBlinkerFrame == elementsInSequence)
 					{
-						frameIntermitenteIzquierdo = 0;
-						bucleIzquierdo++;
+						leftBlinkerFrame = 0;
+						leftLoop++;
 					}
 				}
 			}
 			else
 			{
-				// Queremos activar intermitente izquierdo
-				INTISERV.write(30);
-				estadoIntermitenteIzquierdo = true;
-				frameIntermitenteIzquierdo = 0;
-				bucleIzquierdo = 0;
-				if (estadoIntermitenteDerecho)
+				// Left blinker is changed to active
+				INTLEFTSERV.write(30);
+				leftBlinkerState = true;
+				leftBlinkerFrame = 0;
+				leftLoop = 0;
+				if (rightBlinkerState)
 				{
-					// Cambiamos de intermitente
-					estadoIntermitenteDerecho = false;
-					frameIntermitenteDerecho = 0;
-					bucleDerecho = 0;
-					INTDSERV.write(5);
-					setMultiPanel(CUATRICOLOR0, colores, pixelsDerecho);
+					// Change blinker
+					rightBlinkerState = false;
+					rightBlinkerFrame = 0;
+					rightLoop = 0;
+					INTRIGHTSERV.write(5);
+					setMultiPanel(CUATRICOLOR0, colors, rightPixels);
 				}
 				delay(250);
 			}
 		}
 		else
 		{
-			// No hay botones pulsados. Seguimos con las secuencias que haya
-			if (estadoIntermitenteDerecho)
+			// No buttons pressed. Keep on active sequence.
+			if (rightBlinkerState)
 			{
-				if (estadoIntermitenteIzquierdo)
+				if (leftBlinkerState)
 				{
-					// Estamos en emergencia
-					if (frameIntermitenteDerecho >= elementosSecuencia)
+					// Emergency stop active
+					if (rightBlinkerFrame >= elementsInSequence)
 					{
-						frameIntermitenteDerecho = 0;
+						rightBlinkerFrame = 0;
 					}
-					if (frameIntermitenteIzquierdo >= elementosSecuencia)
+					if (leftBlinkerFrame >= elementsInSequence)
 					{
-						frameIntermitenteIzquierdo = 0;
+						leftBlinkerFrame = 0;
 					}
 				}
 				else
 				{
-					if (frameIntermitenteDerecho >= elementosSecuencia)
+					if (rightBlinkerFrame >= elementsInSequence)
 					{
-						frameIntermitenteDerecho = 0;
-						bucleDerecho++;
-						if (bucleDerecho >= numeroRepeticiones)
+						rightBlinkerFrame = 0;
+						rightLoop++;
+						if (rightLoop >= numberOfRepetitions)
 						{
-							// Hemos llegado al final de la secuencia
-							bucleDerecho = 0;
-							estadoIntermitenteDerecho = false;
-							INTDSERV.write(5);
-							setMultiPanel(CUATRICOLOR0, colores, pixelsDerecho);
+							// Sequence final reached
+							rightLoop = 0;
+							rightBlinkerState = false;
+							INTRIGHTSERV.write(5);
+							setMultiPanel(CUATRICOLOR0, colors, rightPixels);
 							delay(250);
 						}
 					}
@@ -397,19 +408,19 @@ void loop()
 			}
 			else
 			{
-				if (estadoIntermitenteIzquierdo)
+				if (leftBlinkerState)
 				{
-					if (frameIntermitenteIzquierdo >= elementosSecuencia)
+					if (leftBlinkerFrame >= elementsInSequence)
 					{
-						frameIntermitenteIzquierdo = 0;
-						bucleIzquierdo++;
-						if (bucleIzquierdo >= numeroRepeticiones)
+						leftBlinkerFrame = 0;
+						leftLoop++;
+						if (leftLoop >= numberOfRepetitions)
 						{
-							// Hemos llegado al final de la secuencia
-							bucleIzquierdo = 0;
-							estadoIntermitenteIzquierdo = false;
-							setMultiPanel(CUATRICOLOR0, colores, pixelsIzquierdo);
-							INTISERV.write(123);
+							// Sequence final reached
+							leftLoop = 0;
+							leftBlinkerState = false;
+							setMultiPanel(CUATRICOLOR0, colors, leftPixels);
+							INTLEFTSERV.write(123);
 							delay(250);
 						}
 					}
@@ -417,138 +428,138 @@ void loop()
 			}
 		}
 	}
-	// Esperamos a que los intermitentes se abran o se cierren
-	if (estadoIntermitenteDerecho)
+	// Wait blinkers for opening or closing
+	if (rightBlinkerState)
 	{
-		switch(frameIntermitenteDerecho++)
+		switch(rightBlinkerFrame++)
 		{
 			case 0:
-				setMultiPanel(CUATRICOLOR0, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR0, colors, rightPixels);
 				break;
 			case 1:
-				setMultiPanel(CUATRICOLOR1, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR1, colors, rightPixels);
 				break;
 			case 2:
-				setMultiPanel(CUATRICOLOR2, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR2, colors, rightPixels);
 				break;
 			case 3:
-				setMultiPanel(CUATRICOLOR3, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR3, colors, rightPixels);
 				break;
 			case 4:
-				setMultiPanel(CUATRICOLOR4, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR4, colors, rightPixels);
 				break;
 			case 5:
-				setMultiPanel(CUATRICOLOR5, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR5, colors, rightPixels);
 				break;
 			case 6:
-				setMultiPanel(CUATRICOLOR6, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR6, colors, rightPixels);
 				break;
 			case 7:
-				setMultiPanel(CUATRICOLOR7, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR7, colors, rightPixels);
 				break;
 			case 8:
-				setMultiPanel(CUATRICOLOR8, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR8, colors, rightPixels);
 				break;
 			case 9:
-				setMultiPanel(CUATRICOLOR9, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR9, colors, rightPixels);
 				break;
 			case 10:
-				setMultiPanel(CUATRICOLOR10, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR10, colors, rightPixels);
 				break;
 			case 11:
-				setMultiPanel(CUATRICOLOR11, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR11, colors, rightPixels);
 				break;
 			case 12:
-				setMultiPanel(CUATRICOLOR12, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR12, colors, rightPixels);
 				break;
 			case 13:
-				setMultiPanel(CUATRICOLOR13, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR13, colors, rightPixels);
 				break;
 			case 14:
-				setMultiPanel(CUATRICOLOR14, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR14, colors, rightPixels);
 				break;
 			case 15:
-				setMultiPanel(CUATRICOLOR15, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR15, colors, rightPixels);
 				break;
 			case 16:
-				setMultiPanel(CUATRICOLOR16, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR16, colors, rightPixels);
 				break;
 			case 17:
-				setMultiPanel(CUATRICOLOR17, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR17, colors, rightPixels);
 				break;
 			case 18:
-				setMultiPanel(CUATRICOLOR18, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR18, colors, rightPixels);
 				break;
 			default:
-				setMultiPanel(CUATRICOLOR0, colores, pixelsDerecho);
+				setMultiPanel(CUATRICOLOR0, colors, rightPixels);
 				break;
 		}
 	}
-	if (estadoIntermitenteIzquierdo)
+	if (leftBlinkerState)
 	{
-		switch(frameIntermitenteIzquierdo++)
+		switch(leftBlinkerFrame++)
 		{
 			case 0:
-				setMultiPanel(CUATRICOLOR0, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR0, colors, leftPixels);
 				break;
 			case 1:
-				setMultiPanel(CUATRICOLOR1, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR1, colors, leftPixels);
 				break;
 			case 2:
-				setMultiPanel(CUATRICOLOR2, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR2, colors, leftPixels);
 				break;
 			case 3:
-				setMultiPanel(CUATRICOLOR3, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR3, colors, leftPixels);
 				break;
 			case 4:
-				setMultiPanel(CUATRICOLOR4, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR4, colors, leftPixels);
 				break;
 			case 5:
-				setMultiPanel(CUATRICOLOR5, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR5, colors, leftPixels);
 				break;
 			case 6:
-				setMultiPanel(CUATRICOLOR6, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR6, colors, leftPixels);
 				break;
 			case 7:
-				setMultiPanel(CUATRICOLOR7, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR7, colors, leftPixels);
 				break;
 			case 8:
-				setMultiPanel(CUATRICOLOR8, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR8, colors, leftPixels);
 				break;
 			case 9:
-				setMultiPanel(CUATRICOLOR9, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR9, colors, leftPixels);
 				break;
 			case 10:
-				setMultiPanel(CUATRICOLOR10, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR10, colors, leftPixels);
 				break;
 			case 11:
-				setMultiPanel(CUATRICOLOR11, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR11, colors, leftPixels);
 				break;
 			case 12:
-				setMultiPanel(CUATRICOLOR12, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR12, colors, leftPixels);
 				break;
 			case 13:
-				setMultiPanel(CUATRICOLOR13, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR13, colors, leftPixels);
 				break;
 			case 14:
-				setMultiPanel(CUATRICOLOR14, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR14, colors, leftPixels);
 				break;
 			case 15:
-				setMultiPanel(CUATRICOLOR15, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR15, colors, leftPixels);
 				break;
 			case 16:
-				setMultiPanel(CUATRICOLOR16, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR16, colors, leftPixels);
 				break;
 			case 17:
-				setMultiPanel(CUATRICOLOR17, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR17, colors, leftPixels);
 				break;
 			case 18:
-				setMultiPanel(CUATRICOLOR18, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR18, colors, leftPixels);
 				break;
 			default:
-				setMultiPanel(CUATRICOLOR0, colores, pixelsIzquierdo);
+				setMultiPanel(CUATRICOLOR0, colors, leftPixels);
 				break;
 		}
 	}
-	delay(TIME);
+	delay(BLINKER_TIME);
 }
