@@ -1,9 +1,9 @@
-//**
+/**
  * Folding blinker por scooter
  *
  * @author: Felipe Martínez Rodríguez
  * @author: Ignacio Colino Cortizo <icolinocortizo@gmail.com>
- * @version 0.1.2
+ * @version 0.1.3
  */
 
 #include <Adafruit_NeoPixel.h>
